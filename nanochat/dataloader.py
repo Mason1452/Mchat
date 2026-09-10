@@ -111,6 +111,10 @@ def tokenizing_distributed_data_loader_with_state_bos_bestfit(
     # Pre-allocate buffers once: layout is [inputs (B*T) | targets (B*T)]
     # This gives us contiguous views and a single HtoD transfer
     use_cuda = device == "cuda"
+    # pin_memory is a CUDA-only concept; MPS uses unified memory so it's a no-op there.
+    # non_blocking, however, benefits both CUDA (overlaps HtoD with compute) and MPS
+    # (avoids an implicit command-queue sync at the copy boundary).
+    use_non_blocking = device in ("cuda", "mps")
     row_buffer = torch.empty((B, row_capacity), dtype=torch.long) # for building rows without creating Python lists
     cpu_buffer = torch.empty(2 * B * T, dtype=torch.long, pin_memory=use_cuda) # staging area (CPU)
     gpu_buffer = torch.empty(2 * B * T, dtype=torch.long, device=device) # on-device buffer
@@ -157,7 +161,7 @@ def tokenizing_distributed_data_loader_with_state_bos_bestfit(
         state_dict = {"pq_idx": pq_idx, "rg_idx": rg_idx, "epoch": epoch}
 
         # Single HtoD copy into persistent GPU buffer and yield
-        gpu_buffer.copy_(cpu_buffer, non_blocking=use_cuda)
+        gpu_buffer.copy_(cpu_buffer, non_blocking=use_non_blocking)
         yield inputs, targets, state_dict
 
 def tokenizing_distributed_data_loader_bos_bestfit(*args, **kwargs):

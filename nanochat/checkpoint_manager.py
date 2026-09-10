@@ -83,8 +83,9 @@ def build_model(checkpoint_dir, step, device, phase):
     """
     assert phase in ["train", "eval"], f"Invalid phase: {phase}"
     model_data, optimizer_data, meta_data = load_checkpoint(checkpoint_dir, step, device, load_optimizer=False)
-    if device.type in {"cpu", "mps"}:
-        # Convert bfloat16 tensors to float for CPU inference
+    if device.type == "cpu":
+        # CPU has poor bfloat16 support; upcast to fp32 for reliable inference.
+        # MPS keeps bf16 natively (Apple Silicon Metal has hardware bf16 support).
         model_data = {
             k: v.float() if v.dtype == torch.bfloat16 else v
             for k, v in model_data.items()

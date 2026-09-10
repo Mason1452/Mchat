@@ -9,10 +9,32 @@ Adapted from: https://github.com/KellerJordan/modded-nanogpt
 Further contributions from @karpathy and @chrisjmccormick.
 """
 
+import os
+
 import torch
 import torch.distributed as dist
 from torch import Tensor
 from nanochat.common import COMPUTE_DTYPE
+
+# torch.compile escape hatch: Inductor is unreliable on some backends (notably MPS)
+# and can cause hard-to-debug fallbacks or crashes. Set NANOCHAT_COMPILE=0 to disable.
+# Auto-disabled on MPS by default since PyTorch's MPS Inductor path is still WIP.
+def _compile_enabled() -> bool:
+    env = os.environ.get("NANOCHAT_COMPILE")
+    if env is not None:
+        return env not in ("0", "false", "False", "")
+    # Default: enabled on CUDA/CPU, disabled on MPS.
+    return not torch.backends.mps.is_available() or torch.cuda.is_available()
+
+_COMPILE = _compile_enabled()
+
+def _maybe_compile(**compile_kwargs):
+    """Decorator that applies torch.compile only when enabled."""
+    def wrap(fn):
+        if _COMPILE:
+            return torch.compile(**compile_kwargs)(fn)
+        return fn
+    return wrap
 
 # -----------------------------------------------------------------------------
 """
@@ -20,7 +42,7 @@ Good old AdamW optimizer, fused kernel.
 https://arxiv.org/abs/1711.05101
 """
 
-@torch.compile(dynamic=False, fullgraph=True)
+@_maybe_compile(dynamic=False, fullgraph=True)
 def adamw_step_fused(
     p: Tensor,              # (32768, 768) - parameter tensor
     grad: Tensor,           # (32768, 768) - gradient, same shape as p
@@ -108,7 +130,7 @@ polar_express_coeffs = [
 ]
 
 
-@torch.compile(dynamic=False, fullgraph=True)
+@_maybe_compile(dynamic=False, fullgraph=True)
 def muon_step_fused(
     stacked_grads: Tensor,          # (12, 768, 3072) - stacked gradients
     stacked_params: Tensor,         # (12, 768, 3072) - stacked parameters

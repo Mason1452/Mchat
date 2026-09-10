@@ -27,8 +27,11 @@ def _detect_compute_dtype():
         # fp16 training requires GradScaler (not yet implemented), so fall back to fp32.
         # Users can still force fp16 via NANOCHAT_DTYPE=float16 if they know what they're doing.
         return torch.float32, f"auto-detected: CUDA SM {capability[0]}{capability[1]} (pre-Ampere, bf16 not supported, using fp32)"
-    # Note: MPS on recent macOS also handles bf16 fine, opt in via NANOCHAT_DTYPE=bfloat16
-    return torch.float32, "auto-detected: no CUDA (CPU/MPS)"
+    if torch.backends.mps.is_available():
+        # Apple Silicon (M2+) Metal backend has hardware bf16 support: ~2x throughput and ~50% memory vs fp32.
+        # Force fp32 via NANOCHAT_DTYPE=float32 if numerical issues arise on older macOS/PyTorch.
+        return torch.bfloat16, "auto-detected: MPS (bf16 supported on Apple Silicon)"
+    return torch.float32, "auto-detected: CPU"
 COMPUTE_DTYPE, COMPUTE_DTYPE_REASON = _detect_compute_dtype()
 
 class ColoredFormatter(logging.Formatter):
@@ -212,6 +215,27 @@ def compute_cleanup():
     """Companion function to compute_init, to clean things up before script exit"""
     if is_ddp_initialized():
         dist.destroy_process_group()
+    # Release cached device allocator memory on shutdown so long-running notebooks / test
+    # runners don't hold onto Metal buffers after we're done.
+    if torch.backends.mps.is_available():
+        try:
+            torch.mps.empty_cache()
+        except Exception:
+            pass
+
+
+def sync(device):
+    """Device-agnostic synchronize: waits for pending work on the given device.
+
+    Accepts either a torch.device or a string. No-op on CPU. Used by benchmark
+    scripts to get accurate wall-clock timings on both CUDA and MPS backends.
+    """
+    device_type = device.type if isinstance(device, torch.device) else str(device)
+    if device_type == "cuda":
+        torch.cuda.synchronize()
+    elif device_type == "mps":
+        torch.mps.synchronize()
+    # cpu: nothing to do
 
 class DummyWandb:
     """Useful if we wish to not use wandb but have all the same signatures"""
