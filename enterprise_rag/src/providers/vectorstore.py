@@ -53,6 +53,10 @@ class BaseVectorStore(ABC):
     def existing_ids(self) -> set[str]:
         """已存在的 id 集合，用于增量构建时去重。大集合下可以返回空集并把去重交给业务层。"""
 
+    def get_all(self) -> list[Hit]:
+        """返回库内全部记录，用于离线分析/文档聚类。默认未实现以保持向后兼容。"""
+        raise NotImplementedError
+
 
 class ChromaStore(BaseVectorStore):
     def __init__(self, cfg: VectorStoreConfig):
@@ -107,6 +111,16 @@ class ChromaStore(BaseVectorStore):
             return set(all_res.get("ids", []))
         except Exception:
             return set()
+
+    def get_all(self):
+        res = self.collection.get(include=["documents", "metadatas"])
+        ids = res.get("ids", [])
+        docs = res.get("documents", [])
+        metas = res.get("metadatas", [])
+        return [
+            Hit(id=ids[i], text=docs[i] or "", score=0.0, metadata=metas[i] or {})
+            for i in range(len(ids))
+        ]
 
 
 class DashVectorStore(BaseVectorStore):
@@ -267,6 +281,12 @@ class NumpyVectorStore(BaseVectorStore):
 
     def existing_ids(self):
         return set(self._ids)
+
+    def get_all(self):
+        return [
+            Hit(id=self._ids[i], text=self._texts[i], score=0.0, metadata=self._metas[i])
+            for i in range(len(self._ids))
+        ]
 
 
 def build_vectorstore(cfg: VectorStoreConfig) -> BaseVectorStore:

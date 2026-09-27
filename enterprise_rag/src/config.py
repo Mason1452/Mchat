@@ -77,6 +77,10 @@ class RetrieverConfig(BaseModel):
     score_threshold: float = 0.3
     fetch_k: int = 0
     dedup_by_source: bool = False
+    # 文档级内容聚类：同一材料被多目录重复归档时，按全文 shingle containment 归为一簇，
+    # 检索按簇去重；命中簇内任一物理副本即算命中。
+    cluster_duplicates: bool = False
+    dup_threshold: float = 0.72
 
 
 class WarmupConfig(BaseModel):

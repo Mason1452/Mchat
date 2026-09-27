@@ -42,6 +42,8 @@ retriever:
   score_threshold: 0.30
   fetch_k: 12
   dedup_by_source: true
+  cluster_duplicates: true
+  dup_threshold: 0.72
 
 warmup:
   on_startup: true

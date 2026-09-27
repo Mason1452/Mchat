@@ -35,6 +35,29 @@ def _match_sources(hit_sources: list[str], expected: list[str]) -> tuple[int, in
     return hit, len(expected)
 
 
+def _match_sources_aliased(
+    pipe,
+    hit_sources: list[str],
+    expected: list[str],
+) -> tuple[int, int]:
+    """同内容文档归簇后，命中簇内任一副本即算命中对应期望源。"""
+    if not expected:
+        return 0, 0
+    aliases = pipe.source_aliases()
+    if not aliases:
+        return _match_sources(hit_sources, expected)
+
+    def cluster_of(src: str) -> str:
+        for key, members in aliases.items():
+            if src in members:
+                return key
+        return src
+
+    got_clusters = {cluster_of(s) for s in hit_sources}
+    hit = sum(1 for e in expected if cluster_of(e) in got_clusters)
+    return hit, len(expected)
+
+
 @app.command()
 def run(
     testset: str = typer.Option("eval/testset.jsonl", help="JSONL test file"),
@@ -64,7 +87,7 @@ def run(
             hit_sources = [h.metadata.get("source", h.id) for h in res.hits]
 
             k_hit, k_total = _match_keywords(res.answer, exp_kw)
-            s_hit, s_total = _match_sources(hit_sources, exp_src)
+            s_hit, s_total = _match_sources_aliased(pipe, hit_sources, exp_src)
             kw_hit += k_hit; kw_total += k_total
             src_hit += s_hit; src_total += s_total
 

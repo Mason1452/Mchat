@@ -7,8 +7,10 @@
 """
 from __future__ import annotations
 import json
+import logging
+import re
 import threading
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Optional
@@ -21,6 +23,7 @@ from src.providers.vectorstore import build_vectorstore, BaseVectorStore, Hit
 from src.providers.llm import build_llm, BaseLLM
 
 app = typer.Typer(add_completion=False)
+logger = logging.getLogger("enterprise_rag.query")
 
 
 @dataclass
@@ -57,6 +60,65 @@ def _norm_question(question: str) -> str:
     return " ".join(question.split())
 
 
+def _compact(text: str) -> str:
+    return re.sub(r"\s+", "", text)
+
+
+def _char_shingles(text: str, n: int = 3) -> set[str]:
+    t = _compact(text)
+    if len(t) < n:
+        return {t} if t else set()
+    return {t[i:i + n] for i in range(len(t) - n + 1)}
+
+
+def _cluster_documents(
+    records: list[Hit],
+    threshold: float,
+) -> dict[str, str]:
+    """按全文 shingle containment 对"文档(source)"做单链聚类。
+
+    企业资料里同一份文件常被复制进多个项目目录，文件名还会略改；
+    两文档只要较小一方的字符 3-gram 有 threshold 比例落在较大一方里，即判同源。
+    返回 source -> cluster_key(并查集根 source) 映射。
+    """
+    texts: dict[str, str] = defaultdict(str)
+    for r in records:
+        src = r.metadata.get("source", r.id)
+        texts[src] += r.text
+    sources = sorted(texts)
+    sh = {s: _char_shingles(texts[s]) for s in sources}
+
+    parent = {s: s for s in sources}
+
+    def find(x: str) -> str:
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:
+            parent[x], x = root, parent[x]
+        return root
+
+    links = 0
+    for i in range(len(sources)):
+        A = sh[sources[i]]
+        if not A:
+            continue
+        for j in range(i + 1, len(sources)):
+            B = sh[sources[j]]
+            if not B:
+                continue
+            inter = len(A & B)
+            smaller = min(len(A), len(B))
+            if smaller and inter / smaller >= threshold:
+                ra, rb = find(sources[i]), find(sources[j])
+                if ra != rb:
+                    parent[rb] = ra
+                    links += 1
+    if links:
+        logger.info("doc dedup: %d sources, %d duplicate links merged", len(sources), links)
+    return {s: find(s) for s in sources}
+
+
 class RAGPipeline:
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -66,6 +128,7 @@ class RAGPipeline:
         self._warmed = False
         self._retrieve_cache = _LRU(cfg.cache.retrieve_size) if cfg.cache.retrieve else None
         self._answer_cache = _LRU(cfg.cache.answer_size) if cfg.cache.answer else None
+        self._source_cluster: Optional[dict[str, str]] = None
 
     def warmup(self) -> None:
         """预热。按 warmup.embedding / warmup.llm 子开关分别执行，只拉起需要常驻的组件。
@@ -97,15 +160,22 @@ class RAGPipeline:
             score_threshold if score_threshold is not None
             else self.cfg.retriever.score_threshold
         )
-        dedup = self.cfg.retriever.dedup_by_source
-        eff_fetch_k = self.cfg.retriever.fetch_k or (eff_top_k * 3 if dedup else eff_top_k)
+        cluster_on = self.cfg.retriever.cluster_duplicates
+        if cluster_on:
+            self._ensure_source_cluster()
+        cluster_map = self._source_cluster or {}
+
+        eff_fetch_k = self.cfg.retriever.fetch_k or (
+            eff_top_k * 3 if (self.cfg.retriever.dedup_by_source or cluster_on) else eff_top_k
+        )
 
         key = (
             _norm_question(question),
             eff_top_k,
             round(float(eff_thr), 6),
-            dedup,
+            self.cfg.retriever.dedup_by_source,
             eff_fetch_k,
+            cluster_on,
         )
         if self._retrieve_cache is not None:
             cached = self._retrieve_cache.get(key)
@@ -113,29 +183,73 @@ class RAGPipeline:
                 return list(cached)
 
         emb = self.embedder.encode([question])[0]
-        raw_hits = self.store.query(
-            embedding=emb,
-            top_k=eff_fetch_k,
-            score_threshold=eff_thr,
-        )
 
-        if dedup:
-            seen: set = set()
+        if cluster_on and cluster_map:
+            # 重复归档多时，固定 fetch_k 折叠后可能不足 top_k 个簇，按需扩大候选池。
             hits: list[Hit] = []
-            for h in raw_hits:
-                s = h.metadata.get("source", h.id)
-                if s in seen:
-                    continue
-                seen.add(s)
-                hits.append(h)
-                if len(hits) >= eff_top_k:
+            need = eff_fetch_k
+            total_n = self.store.count()
+            while True:
+                raw_hits = self.store.query(
+                    embedding=emb, top_k=need, score_threshold=eff_thr,
+                )
+                seen: set = set()
+                hits = []
+                for h in raw_hits:
+                    s = cluster_map.get(h.metadata.get("source", h.id), h.id)
+                    if s in seen:
+                        continue
+                    seen.add(s)
+                    hits.append(h)
+                if len(hits) >= eff_top_k or need >= total_n or not raw_hits:
                     break
+                need = min(total_n, max(need * 2, eff_top_k * 6))
+            hits = hits[:eff_top_k]
         else:
-            hits = raw_hits[:eff_top_k]
+            raw_hits = self.store.query(
+                embedding=emb,
+                top_k=eff_fetch_k,
+                score_threshold=eff_thr,
+            )
+            if self.cfg.retriever.dedup_by_source:
+                seen = set()
+                hits = []
+                for h in raw_hits:
+                    s = h.metadata.get("source", h.id)
+                    if s in seen:
+                        continue
+                    seen.add(s)
+                    hits.append(h)
+                    if len(hits) >= eff_top_k:
+                        break
+            else:
+                hits = raw_hits[:eff_top_k]
 
         if self._retrieve_cache is not None:
             self._retrieve_cache.put(key, list(hits))
         return hits
+
+    def _ensure_source_cluster(self) -> None:
+        if self._source_cluster is not None:
+            return
+        try:
+            self._source_cluster = _cluster_documents(
+                self.store.get_all(), self.cfg.retriever.dup_threshold
+            )
+        except NotImplementedError:
+            logger.warning("cluster_duplicates unsupported by vectorstore; skipped")
+            self._source_cluster = {}
+
+    def source_aliases(self) -> dict[str, list[str]]:
+        """cluster_key -> 簇内全部物理 source 路径，供评测/展示用。未开聚类时返回空。"""
+        if self.cfg.retriever.cluster_duplicates:
+            self._ensure_source_cluster()
+        if not self._source_cluster:
+            return {}
+        out: dict[str, list[str]] = defaultdict(list)
+        for src, key in self._source_cluster.items():
+            out[key].append(src)
+        return dict(out)
 
     def build_prompt(self, question: str, hits: list[Hit]) -> tuple[str, str]:
         if hits:
