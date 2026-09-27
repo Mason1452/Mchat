@@ -1,0 +1,83 @@
+app:
+  name: enterprise-rag
+  env: local
+
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  index_dir: index/numpy_db
+
+chunking:
+  chunk_size: 512
+  chunk_overlap: 80
+  min_chunk_chars: 40
+
+embedding:
+  provider: bge_local
+  model: BAAI/bge-small-zh-v1.5
+  device: mps
+  batch_size: 32
+  dim: 512
+  # 建索引时 torch CPU 侧最多用 3 个线程，避免和系统/其他任务抢核导致卡顿（默认不限=6 核拉满）。
+  max_cpu_threads: 3
+  # MPS 上用 fp16 权重：权重常驻内存减半，检索精度几乎不变。
+  fp16: true
+
+vectorstore:
+  # 本地默认用零依赖 numpy 向量库（float32 矩阵+jsonl），不导入 chromadb/onnxruntime，省数百 MB。
+  # 数据量超过 ~5 万 chunk 或需要 HNSW 时，把 provider 改回 chroma 即可，业务代码无需改动。
+  provider: numpy
+  collection: enterprise
+  dim: 512
+  persist_dir: index/numpy_db
+
+llm:
+  provider: ollama
+  host: http://127.0.0.1:11434
+  model: qwen2.5:3b-instruct-q4_K_M
+  temperature: 0.2
+  max_tokens: 512
+  timeout_s: 120
+  keep_alive: 30m
+  # 内存紧张时可改成 5m：空闲 5 分钟后 Ollama 卸载模型、释放约 2GB，代价是下次提问冷启动 +数秒。
+  runtime_options:
+    # 上下文窗口。默认 2048 对当前 prompt（4 段 x ~500 字符 + system + 答案）足够，
+    # 收紧到 1536 可减小 KV cache 分配、加速 prefill。若发现被截断可调回 2048/3072。
+    num_ctx: 1536
+    # 单次 prefill 处理的 token 批大小，M2 Pro 上 256 是速度/内存的均衡点。
+    num_batch: 256
+    # CPU 侧线程数，固定为性能核数量避免自动探测抖动（M2 Pro 有 6~8 个 P-core）。
+    num_thread: 6
+    # Flash Attention 需 Ollama ≥ 0.3.x + 模型支持；开启后长上下文更省显存。
+    # 若你的 Ollama 版本不支持，该字段会被忽略，无副作用。
+    flash_attention: true
+
+retriever:
+  top_k: 4
+  score_threshold: 0.30
+
+warmup:
+  on_startup: true
+  embedding: true
+  llm: true
+  text: "知识"
+
+prompt:
+  system: |
+    你是企业知识库助手。请严格根据下面提供的资料内容回答用户问题。
+    规则：
+    1. 如果资料中没有相关信息，请如实回答"根据现有资料无法回答该问题"，不要编造。
+    2. 回答需简洁、准确，必要时以要点形式呈现。
+    3. 在每段回答末尾以 [来源: 文件名] 的形式标注引用来源。
+  user_template: |
+    以下是相关资料片段：
+    {context}
+
+    用户问题：{question}
+
+    请基于上述资料回答。
+
+server:
+  host: 0.0.0.0
+  port: 8000
+  cors_origins: ["*"]

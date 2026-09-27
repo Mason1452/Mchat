@@ -1,0 +1,70 @@
+app:
+  name: enterprise-rag
+  env: deepseek
+
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  index_dir: index/numpy_db
+
+chunking:
+  chunk_size: 512
+  chunk_overlap: 80
+  min_chunk_chars: 40
+
+embedding:
+  provider: bge_local
+  model: BAAI/bge-small-zh-v1.5
+  device: mps
+  batch_size: 32
+  dim: 512
+  max_cpu_threads: 3
+  fp16: true
+
+vectorstore:
+  provider: numpy
+  collection: enterprise
+  dim: 512
+  persist_dir: index/numpy_db
+
+llm:
+  provider: deepseek
+  host: https://api.deepseek.com/v1
+  model: deepseek-chat
+  temperature: 0.2
+  max_tokens: 512
+  timeout_s: 60
+  api_key_env: DEEPSEEK_API_KEY
+  runtime_options: {}
+
+retriever:
+  top_k: 6
+  score_threshold: 0.30
+  fetch_k: 12
+  dedup_by_source: true
+
+warmup:
+  on_startup: true
+  embedding: true
+  llm: false
+  text: "知识"
+
+prompt:
+  system: |
+    你是企业知识库助手。请严格根据下面提供的资料内容回答用户问题。
+    规则：
+    1. 如果资料中没有相关信息，请如实回答"根据现有资料无法回答该问题"，不要编造。
+    2. 回答需简洁、准确，必要时以要点形式呈现。
+    3. 在每段回答末尾以 [来源: 文件名] 的形式标注引用来源。
+  user_template: |
+    以下是相关资料片段：
+    {context}
+
+    用户问题：{question}
+
+    请基于上述资料回答。
+
+server:
+  host: 0.0.0.0
+  port: 8000
+  cors_origins: ["*"]

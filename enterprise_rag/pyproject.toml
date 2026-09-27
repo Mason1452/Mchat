@@ -1,0 +1,41 @@
+[project]
+name = "enterprise-rag"
+version = "0.1.0"
+description = "Enterprise document RAG: PDF/Word/retrospectives with local dev + Aliyun production"
+requires-python = ">=3.10"
+dependencies = [
+    "pypdf>=4.0.0",
+    "python-docx>=1.1.0",
+    "sentence-transformers>=3.0.0",
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+    "typer>=0.12.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.5.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+chroma = [
+    "chromadb>=0.5.0",
+]
+ollama = [
+    "ollama>=0.3.0",
+]
+aliyun = [
+    "dashscope>=1.20.0",
+    "alibabacloud-ha3engine-vector>=1.1.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

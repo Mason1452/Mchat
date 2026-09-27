@@ -1,0 +1,17 @@
+{"question": "星桥项目的完工成本封顶是多少，还剩多少余量？", "expected_keywords": ["星桥", "完工成本"], "expected_sources": ["xingqiao_portfolio_2025/项目资料/06_本周受理与保障安排.pdf", "xingqiao_archive_2025/复核留存/联席项目交付复核册.pdf"]}
+{"question": "星桥桥接资金重新受理后，手续费和日息有什么变化？", "expected_keywords": ["星桥", "手续费"], "expected_sources": ["xingqiao_single_2025/项目资料/06_本周受理与保障安排.pdf", "xingqiao_2025_r2/后续来件/采购与资金回函_补件.pdf"]}
+{"question": "星桥项目里，人员排程有哪些互斥限制？", "expected_keywords": ["星桥"], "expected_sources": ["xingqiao_archive_2025/复核留存/联席项目交付复核册.pdf"]}
+{"question": "岸桥计划项目往来与签批归档里的关键安排是什么？", "expected_keywords": ["岸桥"], "expected_sources": ["anqiao_20260905_r3/00_岸桥计划_项目往来与签批归档.pdf"]}
+{"question": "岸桥经营会决策稿核算版是怎么定的？", "expected_keywords": ["岸桥", "经营会"], "expected_sources": ["anqiao_reference/岸桥计划_经营会决策稿_核算版.pdf"]}
+{"question": "Orion 智能排程首期产品方案包含什么？", "expected_keywords": ["Orion"], "expected_sources": ["orion_case/澄明云_Orion智能排程_产品委员会材料.pdf", "orion_answer_package/02_Orion首期产品方案.pdf"]}
+{"question": "Orion 产品委员会的决策备忘录结论是什么？", "expected_keywords": ["Orion"], "expected_sources": ["orion_answer_package/01_Orion产品委员会决策备忘录.pdf"]}
+{"question": "回程九月经营会的经营决议是什么？", "expected_keywords": ["回程", "经营"], "expected_sources": ["relaydesk_solution_20260908/回程_九月经营会_经营决议与产品方案.pdf", "relaydesk_20260905_meeting/00工作委托.pdf"]}
+{"question": "回程项目客户委托里提出了什么要求？", "expected_keywords": ["回程"], "expected_sources": ["relaydesk_20260905_meeting/00工作委托.pdf"]}
+{"question": "澄川协作经营会决定稿对产品和客户是怎么定的？", "expected_keywords": ["澄川", "经营会"], "expected_sources": ["chengchuan_solution/澄川协作_经营会决定稿.pdf", "chengchuan_20260907_revision/00_周三经营会邮件.pdf"]}
+{"question": "澄川协作产品方案与客户沟通稿的核心内容是什么？", "expected_keywords": ["澄川"], "expected_sources": ["chengchuan_solution/澄川协作_产品方案与客户沟通稿.pdf"]}
+{"question": "poison 试点立项做了哪些调整？", "expected_keywords": ["poison", "试点"], "expected_sources": ["poison_20260908/01_试点立项与调整记录.pdf"]}
+{"question": "poison 经营会决策备忘录的结论是什么？", "expected_keywords": ["poison", "经营会"], "expected_sources": ["poison_solution_20260908/01_经营会决策备忘录.pdf"]}
+{"question": "Northstar 项目切换设计的核心是什么？", "expected_keywords": ["Northstar"], "expected_sources": ["northstar_global_retail_2026_06/Northstar_Operations/01_Initial_Packet/Northstar_Cutover_Design_v4.2.pdf"]}
+{"question": "澄海计划管理层接管方案是什么？", "expected_keywords": ["澄海"], "expected_sources": ["pm_agent_case_2026_06/保留核验/澄海计划_管理层接管方案.pdf"]}
+{"question": "沥川项目的工作安排包括什么？", "expected_keywords": ["沥川"], "expected_sources": ["lichuan_20260908/00_项目工作安排.pdf"]}
+{"question": "ATLAS 内部评审基准主要评什么？", "expected_keywords": ["ATLAS"], "expected_sources": ["atlas_internal_benchmark_2026_04/ATLAS_内部评审基准_文字部分.pdf"]}

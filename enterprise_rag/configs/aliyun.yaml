@@ -1,0 +1,63 @@
+app:
+  name: enterprise-rag
+  env: aliyun
+
+paths:
+  raw_dir: /data/raw
+  processed_dir: /data/processed
+  index_dir: /data/index
+
+chunking:
+  chunk_size: 512
+  chunk_overlap: 80
+  min_chunk_chars: 40
+
+embedding:
+  provider: dashscope
+  model: text-embedding-v3
+  batch_size: 25
+  dim: 1024
+  api_key_env: DASHSCOPE_API_KEY
+
+vectorstore:
+  provider: dashvector
+  collection: enterprise
+  endpoint_env: DASHVECTOR_ENDPOINT
+  api_key_env: DASHVECTOR_API_KEY
+  metric: cosine
+
+llm:
+  provider: dashscope
+  model: qwen-plus
+  temperature: 0.2
+  max_tokens: 512
+  timeout_s: 60
+  api_key_env: DASHSCOPE_API_KEY
+
+retriever:
+  top_k: 4
+  score_threshold: 0.35
+
+warmup:
+  on_startup: false
+  text: "知识"
+
+prompt:
+  system: |
+    你是企业知识库助手。请严格根据下面提供的资料内容回答用户问题。
+    规则：
+    1. 如果资料中没有相关信息，请如实回答"根据现有资料无法回答该问题"，不要编造。
+    2. 回答需简洁、准确，必要时以要点形式呈现。
+    3. 在每段回答末尾以 [来源: 文件名] 的形式标注引用来源。
+  user_template: |
+    以下是相关资料片段：
+    {context}
+
+    用户问题：{question}
+
+    请基于上述资料回答。
+
+server:
+  host: 0.0.0.0
+  port: 8000
+  cors_origins: ["*"]
