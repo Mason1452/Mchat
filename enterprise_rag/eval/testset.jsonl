@@ -13,5 +13,5 @@
 {"question": "poison 经营会决策备忘录的结论是什么？", "expected_keywords": ["poison", "经营会"], "expected_sources": ["poison_solution_20260908/01_经营会决策备忘录.pdf"]}
 {"question": "Northstar 项目切换设计的核心是什么？", "expected_keywords": ["Northstar"], "expected_sources": ["northstar_global_retail_2026_06/Northstar_Operations/01_Initial_Packet/Northstar_Cutover_Design_v4.2.pdf"]}
 {"question": "澄海计划管理层接管方案是什么？", "expected_keywords": ["澄海"], "expected_sources": ["pm_agent_case_2026_06/保留核验/澄海计划_管理层接管方案.pdf"]}
-{"question": "沥川项目的工作安排包括什么？", "expected_keywords": ["沥川"], "expected_sources": ["lichuan_20260908/00_项目工作安排.pdf"]}
+{"question": "沥川项目的工作安排包括什么？", "expected_keywords": ["砺川"], "expected_sources": ["lichuan_20260908/00_项目工作安排.pdf"]}
 {"question": "ATLAS 内部评审基准主要评什么？", "expected_keywords": ["ATLAS"], "expected_sources": ["atlas_internal_benchmark_2026_04/ATLAS_内部评审基准_文字部分.pdf"]}

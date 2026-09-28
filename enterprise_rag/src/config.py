@@ -145,8 +145,25 @@ def _resolve_env(section: dict[str, Any]) -> dict[str, Any]:
     return resolved
 
 
+def _load_dotenv_once() -> None:
+    """从项目根（src 的上一级）加载 .env，使各入口无需关心 cwd。
+
+    override=False：真实环境变量优先，.env 只作本地缺省，避免覆盖部署侧注入。
+    """
+    if getattr(_load_dotenv_once, "_done", False):
+        return
+    try:
+        from dotenv import load_dotenv
+        project_root = Path(__file__).resolve().parents[1]
+        load_dotenv(project_root / ".env", override=False)
+    except Exception:
+        pass
+    _load_dotenv_once._done = True
+
+
 def load_config(path: str | Path) -> Config:
     """从 YAML 加载配置，并把 *_env 引用的环境变量注入到对应字段。"""
+    _load_dotenv_once()
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
