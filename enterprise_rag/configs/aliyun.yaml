@@ -37,6 +37,8 @@ llm:
 retriever:
   top_k: 4
   score_threshold: 0.35
+  cluster_duplicates: true
+  dup_threshold: 0.72
 
 warmup:
   on_startup: false

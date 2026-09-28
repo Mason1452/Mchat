@@ -78,9 +78,12 @@ class RetrieverConfig(BaseModel):
     fetch_k: int = 0
     dedup_by_source: bool = False
     # 文档级内容聚类：同一材料被多目录重复归档时，按全文 shingle containment 归为一簇，
-    # 检索按簇去重；命中簇内任一物理副本即算命中。
+    # 检索按簇去重；命中簇内任一副本即算命中。
     cluster_duplicates: bool = False
     dup_threshold: float = 0.72
+    # 离线簇工件路径：构建侧产出、检索侧加载，避免依赖向量库的全量扫描
+    # （DashVector 等托管库无全量遍历接口）。None 时落到 <index_dir>/source_cluster.json。
+    source_cluster_file: Optional[str] = None
 
 
 class WarmupConfig(BaseModel):
@@ -160,3 +163,10 @@ def load_config(path: str | Path) -> Config:
 def default_config_path() -> str:
     """允许通过 RAG_CONFIG 环境变量覆盖，缺省为 configs/local.yaml。"""
     return os.environ.get("RAG_CONFIG", "configs/local.yaml")
+
+
+def source_cluster_path(cfg: Config) -> Path:
+    """离线簇工件的落盘/读取路径：显式配置优先，否则 <index_dir>/source_cluster.json。"""
+    if cfg.retriever.source_cluster_file:
+        return Path(cfg.retriever.source_cluster_file)
+    return Path(cfg.paths.index_dir) / "source_cluster.json"

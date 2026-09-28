@@ -9,6 +9,7 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
+from collections import Counter, defaultdict
 import hashlib
 import json
 import re
@@ -16,7 +17,8 @@ import re
 import typer
 from tqdm import tqdm
 
-from src.config import load_config, default_config_path
+from src.config import load_config, default_config_path, source_cluster_path
+from src.dedup import cluster_sources
 from src.providers.embedding import build_embedder
 from src.providers.vectorstore import build_vectorstore, Doc
 
@@ -95,6 +97,53 @@ def _iter_files(processed_dir: Path, limit: int | None) -> list[Path]:
     if limit:
         files = files[:limit]
     return files
+
+
+def build_source_cluster(cfg) -> Path:
+    """从处理后的 markdown 聚合每篇文档全文，做内容聚类并写离线工件。
+
+    不依赖 embedding / 向量库，因此 DashVector 等无全量遍历接口的托管库
+    也能在构建侧产出簇映射，供检索侧直接加载。
+    """
+    processed = Path(cfg.paths.processed_dir)
+    files = sorted(processed.rglob("*.md"))
+    texts: dict[str, str] = defaultdict(str)
+    for f in files:
+        rel_key = str(f.relative_to(processed))
+        raw = f.read_text(encoding="utf-8", errors="ignore")
+        meta, body = _parse_front_matter(raw)
+        source = meta.get("source_relpath", rel_key)
+        texts[source] += body
+
+    mapping = cluster_sources(texts, cfg.retriever.dup_threshold)
+
+    out = source_cluster_path(cfg)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps(
+            {
+                "threshold": cfg.retriever.dup_threshold,
+                "sources": len(mapping),
+                "clusters": mapping,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    roots = Counter(mapping.values())
+    dup_groups = sum(1 for c in roots.values() if c > 1)
+    print(f"Source cluster file written: {out} (sources={len(mapping)}, duplicate clusters={dup_groups})")
+    return out
+
+
+@app.command()
+def cluster(
+    config: str = typer.Option(None, help="Config file path"),
+):
+    """只（重新）计算文档簇工件，不跑 embedding / 向量库。数据更新后可零成本重建。"""
+    cfg = load_config(config or default_config_path())
+    build_source_cluster(cfg)
 
 
 @app.command()
@@ -189,6 +238,8 @@ def run(
     _flush()
     _save_progress(progress_path, done)
     print(f"Index build done. files={stat_files}, new_chunks={stat_chunks}, total_vectors={store.count()}")
+    if cfg.retriever.cluster_duplicates:
+        build_source_cluster(cfg)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,6 @@
 from __future__ import annotations
 import json
 import logging
-import re
 import threading
 from collections import OrderedDict, defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -17,7 +16,8 @@ from typing import Optional
 
 import typer
 
-from src.config import Config, load_config, default_config_path
+from src.config import Config, load_config, default_config_path, source_cluster_path
+from src.dedup import cluster_sources
 from src.providers.embedding import build_embedder, BaseEmbedder
 from src.providers.vectorstore import build_vectorstore, BaseVectorStore, Hit
 from src.providers.llm import build_llm, BaseLLM
@@ -58,65 +58,6 @@ class _LRU:
 
 def _norm_question(question: str) -> str:
     return " ".join(question.split())
-
-
-def _compact(text: str) -> str:
-    return re.sub(r"\s+", "", text)
-
-
-def _char_shingles(text: str, n: int = 3) -> set[str]:
-    t = _compact(text)
-    if len(t) < n:
-        return {t} if t else set()
-    return {t[i:i + n] for i in range(len(t) - n + 1)}
-
-
-def _cluster_documents(
-    records: list[Hit],
-    threshold: float,
-) -> dict[str, str]:
-    """按全文 shingle containment 对"文档(source)"做单链聚类。
-
-    企业资料里同一份文件常被复制进多个项目目录，文件名还会略改；
-    两文档只要较小一方的字符 3-gram 有 threshold 比例落在较大一方里，即判同源。
-    返回 source -> cluster_key(并查集根 source) 映射。
-    """
-    texts: dict[str, str] = defaultdict(str)
-    for r in records:
-        src = r.metadata.get("source", r.id)
-        texts[src] += r.text
-    sources = sorted(texts)
-    sh = {s: _char_shingles(texts[s]) for s in sources}
-
-    parent = {s: s for s in sources}
-
-    def find(x: str) -> str:
-        root = x
-        while parent[root] != root:
-            root = parent[root]
-        while parent[x] != root:
-            parent[x], x = root, parent[x]
-        return root
-
-    links = 0
-    for i in range(len(sources)):
-        A = sh[sources[i]]
-        if not A:
-            continue
-        for j in range(i + 1, len(sources)):
-            B = sh[sources[j]]
-            if not B:
-                continue
-            inter = len(A & B)
-            smaller = min(len(A), len(B))
-            if smaller and inter / smaller >= threshold:
-                ra, rb = find(sources[i]), find(sources[j])
-                if ra != rb:
-                    parent[rb] = ra
-                    links += 1
-    if links:
-        logger.info("doc dedup: %d sources, %d duplicate links merged", len(sources), links)
-    return {s: find(s) for s in sources}
 
 
 class RAGPipeline:
@@ -232,13 +173,30 @@ class RAGPipeline:
     def _ensure_source_cluster(self) -> None:
         if self._source_cluster is not None:
             return
+
+        artifact = source_cluster_path(self.cfg)
+        if artifact.exists():
+            try:
+                data = json.loads(artifact.read_text(encoding="utf-8"))
+                mapping = data.get("clusters", {})
+                if mapping:
+                    logger.info("loaded source cluster artifact: %s (%d sources)", artifact, len(mapping))
+                    self._source_cluster = mapping
+                    return
+            except Exception:
+                logger.warning("failed to parse cluster artifact %s; falling back", artifact)
+
         try:
-            self._source_cluster = _cluster_documents(
-                self.store.get_all(), self.cfg.retriever.dup_threshold
-            )
+            records = self.store.get_all()
         except NotImplementedError:
-            logger.warning("cluster_duplicates unsupported by vectorstore; skipped")
+            logger.warning("no cluster artifact and vectorstore cannot scan; clustering skipped")
             self._source_cluster = {}
+            return
+
+        texts: dict[str, str] = defaultdict(str)
+        for r in records:
+            texts[r.metadata.get("source", r.id)] += r.text
+        self._source_cluster = cluster_sources(texts, self.cfg.retriever.dup_threshold)
 
     def source_aliases(self) -> dict[str, list[str]]:
         """cluster_key -> 簇内全部物理 source 路径，供评测/展示用。未开聚类时返回空。"""
